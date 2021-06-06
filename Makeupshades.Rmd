@@ -1,0 +1,216 @@
+---
+title: "What is the makeup industry made of?"
+author: "Vina"
+date: "07/04/2021"
+output: html_document
+---
+
+
+Load libraries and necessary data sets from https://github.com/the-pudding/data/tree/master/foundation-names
+
+A quick summary/glossary about the variables in the data sets: 
+brand =  brand of foundation 
+
+product	= The product name
+
+url =	URL to the product page	character
+description =	The description associated with a particular swatch (e.g., “Shade 1 (fair cool)”) as displayed on the product page	
+
+imgSrc = The incomplete url to the image displaying a swatch of this particular foundation shade (note: to complete the url, https://sephora.com needs to be appended to the beginning)
+
+imgAlt = The alt text attribute for a particular swatch, as is made available to assistive technology	
+
+name = The programmatically extracted word-based name of this particular shade	
+specific = The number or number/letter combination (e.g., “12CN”) used to label a particular shade	
+
+hex	= The hexadecimal color code for the most prevalent color in the imgSrc swatch image (e.g., #4F322C)	
+
+hue	= The hue value from the HSL color space. This is represented as a number from 0 to 360 degrees around the color wheel	
+
+sat	= The saturuation value from the HSL color space. This represents the amount of gray in a color from 0 to 100 percent (Note: here, it is represented as a decimal from 0 to 1)
+
+lightness	= The lightness value from the HSL color space. This is represented as a decimal from 0 to 1 where 0 is pure black and 1 is pure white
+
+lightToDark	= Whether this product line organizes their colors from light to dark (Note: a value of NA indicates that a product uses a number-based naming system, but not a sequential numbering system)	
+
+numbers =	The numbers associated with a particular shade	
+
+id	= A generated ID number assigned to each individual product
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(wesanderson)
+library(wordcloud)
+library(RColorBrewer)
+library(leaflet)
+library(dplyr)
+sephora <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-30/sephora.csv')
+ulta <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-30/ulta.csv') 
+allCategories <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-30/allCategories.csv') 
+allShades <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-30/allShades.csv') 
+allNumbers <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-30/allNumbers.csv') 
+view(allNumbers)
+view(allCategories)
+view(allShades)
+
+```
+
+
+Extract words relating to skin complexion using the str_extract function
+
+```{r,echo=FALSE}
+
+complexion <- allShades %>% mutate(keywords= str_extract(description, "dark|tan|deep|light|fair|beige")) %>% na.omit()
+```
+
+Compare foundation products for darker and fairer skin complexion in terms of range of lightness. Notice that products made for darekr skin tones have increased variability in range of lightness compared to fairer skin tones
+```{r, echo=FALSE}
+pallete <- wes_palette("Darjeeling1", 100, type = "continuous")
+
+dark_plot<- complexion %>% filter(keywords %in% c("dark", "tan", "deep")) %>% ggplot(aes(keywords, lightness, colour=lightness)) + geom_jitter() + scale_colour_gradientn(colours = pallete) 
+
+dark_plot
+
+light_plot <- complexion %>% filter(keywords %in% c("fair", "light", "beige")) %>% ggplot(aes(keywords, lightness, colour=lightness)) + geom_jitter() + scale_color_gradientn(colors=pallete)
+
+light_plot
+```
+Most variability in light and deep so let us compare the two
+
+```{r, echo=FALSE}
+light_and_deep <- complexion %>% filter(keywords %in% c("light","deep")) %>%  ggplot(aes(keywords, lightness, colour=lightness)) + geom_jitter() 
+light_and_deep
+```
+
+However, this may not be very representative of actual products considering that words like "light" may be also be used to describe the texture of a product instead of color. So instead, let's explore brands that use "dark" and "fair" 
+```{r, echo=FALSE}
+fair_and_darkbrands <- complexion %>% filter(keywords %in% c("fair","dark")) 
+
+ggplot(fair_and_darkbrands, aes(keywords)) +geom_bar(aes(fill=brand)) 
+
+ggplot(fair_and_darkbrands, aes(keywords,lightness)) +geom_jitter(aes(color=brand)) 
+
+#extract medium lightness because dark and light seems to overlap around 0.6 to 0.7
+fair_and_darkbrands2 <- complexion %>% filter(keywords %in% c("fair","dark")) %>% filter(lightness>0.6) %>% ggplot( aes(keywords,lightness)) +geom_jitter()+scale_color_gradientn(colors=pallete) 
+
+fair_and_darkbrands2
+```
+
+What's in a name? 
+
+```{r warning=FALSE, r,echo=FALSE}
+
+dark_names <- complexion %>% filter(keywords == "dark") %>% count(name, sort=TRUE) %>% with(wordcloud(name, n)) 
+
+fair_names <- complexion %>% filter(keywords == "fair") %>% count(name, sort = TRUE) %>% with(wordcloud(name, n))
+```
+
+Products for darker skin seem to be named after food/drinks while fairer skin products appear to be more descriptive in their names 
+
+
+```{r,echo=FALSE}
+dark <- allCategories %>% mutate(keywords= str_extract(name, "dark|Dark")) %>% na.omit()
+
+ggplot(dark, aes(lightness,brand))+ geom_col(fill=dark$hex) + facet_wrap("categories")
+
+fair <- allCategories %>% mutate(keywords= str_extract(name, "fair|Fair")) %>% na.omit()
+ggplot(fair, aes(lightness,brand))+ geom_col(fill=fair$hex) + facet_wrap("categories")
+```
+
+
+Natural and nude ranges? 
+
+This plot is depicting the range of  lightness offered by each brand. It is an indication of how many different shades are offered and what their hex colors look like instead of a measure of lightness. This is because the hex colors and lightness measurements do not match up. 
+
+```{r,echo=FALSE}
+natural <- allNumbers %>% mutate(keywords= str_extract(name, "natural|Natural")) %>% na.omit()  
+
+ggplot(natural, aes(lightness,brand))+ geom_col(fill=natural$hex) 
+
+nude <- allNumbers %>% mutate(keywords= str_extract(name, "nude|Nude")) %>% na.omit()  
+
+ggplot(nude, aes(lightness,brand))+ geom_col(fill=nude$hex) 
+
+```
+Notice that NUDESTIX seems to be pretty inclusive!
+
+Let's explore what chemicals in these products. First load in the chemicals in cosmetics data set found on https://data.chhs.ca.gov/dataset/chemicals-in-cosmetics/resource/57da6c9a-41a7-44b0-ab8d-815ff2cd5913 and select variables of interest
+
+Already loaded dataset because very large and takes quite long!
+
+```{r, echo=FALSE}
+chemicals<- readr::read_csv('https://data.chhs.ca.gov/dataset/596b5eed-31de-4fd8-a645-249f3f9b19c4/resource/57da6c9a-41a7-44b0-ab8d-815ff2cd5913/download/cscpopendata.csv') 
+head(chemicals)
+chemicals <- chemicals %>% select(c("BrandName","ChemicalName")) 
+```
+
+Find similarities from the brands listed in allShades dataset and brands listed in the chemicals dataset
+
+```{r, echo=FALSE}
+chemicals$BrandName <-  allShades$brand[match(chemicals$BrandName, allShades$brand)] 
+chemicals <- chemicals %>% drop_na()
+head(chemicals)
+```
+
+
+plotting cosmetic chemicals
+
+```{r, echo=FALSE}
+ggplot(data = chemicals,  mapping = aes(x = ChemicalName)) +
+geom_bar() +
+coord_flip() +
+theme_bw() 
+
+```
+
+
+Titanium dioxide seems to be a key ingredient in SPF so let's explore range of SPF in foundation products
+
+```{r, echo+FALSE}
+spf <-allCategories %>% mutate(spf= str_extract(product, "spf|SPF")) %>% na.omit()
+ggplot(spf, aes(lightness,brand))+ geom_col(fill=spf$hex)
+```
+
+SPF in makeup strong enough for Australian UV? The following code is to extract the highest UV index recorded within different states in Australia. (data source: https://data.gov.au/data/organization/australian-radiation-protection-and-nuclear-safety-agency-arpansa)
+
+```{r, echo=FALSE}
+
+UV_SA<- readr::read_csv('https://data.gov.au/data/dataset/026d4974-9efb-403d-9b39-27aee31a6439/resource/b1a486eb-a332-486e-b1c7-93159946033a/download/uv-adelaide-2019.csv') %>% arrange( desc(UV_Index)) %>% filter(row_number()==1)
+
+UV_melb<- readr::read_csv('https://data.gov.au/data/dataset/fb836013-f300-4f92-aa1e-fb5014aea40e/resource/15549ec5-bbeb-469f-a3e9-032d57231e71/download/uv-melbourne-2019.csv') %>% arrange( desc(UV_Index)) %>% filter(row_number()==1)
+
+UV_syd<- readr::read_csv('https://data.gov.au/data/dataset/c31a759c-a4d4-455f-87a7-98576be14f11/resource/c14f6c1b-b5a9-4f7f-b296-cdae3cc2fd7c/download/uv-sydney-2019.csv') %>% arrange(desc(UV_Index)) %>% filter(row_number()==1)
+
+UV_perth<- readr::read_csv('https://data.gov.au/data/dataset/1b55352e-c0d8-48c8-9828-ef12885c9797/resource/14134c81-fbad-4f66-ad49-4660d455c947/download/uv-perth-2019.csv') %>%  arrange( desc(UV_Index)) %>% filter(row_number()==1)
+
+head(UV_SA)
+```
+
+```{r,echo=FALSE}
+
+combined_UV<-rbind(UV_melb,UV_SA,UV_syd,UV_perth)
+
+
+pal <- colorNumeric(palette = "YlOrRd",
+domain = combined_UV$UV_Index)
+
+leaflet(data = combined_UV) %>% addTiles() %>% addCircleMarkers(lat = ~Lat, lng = ~Lon, popup = ~UV_Index, 
+color = ~pal(UV_Index), stroke = FALSE, fillOpacity = 10) %>% addLegend(position = "bottomleft", pal = pal, values = ~UV_Index)
+```
+
+```{r, echo=FALSE}
+
+x <- spf$product
+split <- strsplit(x, " (?=[^ ]+$)", perl=TRUE)
+df <- matrix(unlist(split), ncol=2, byrow=TRUE) %>% as.data.frame()
+head(df)
+ggplot(df, aes(V2)) + geom_bar()
+
+```
+At this rate, you are likely to be reapplying these makeup products in high quantity as to get SPF benefits. Although these products are likely to offer sun protection, they may not be practical for reapplication or full coverage. 
+
+
+Overall, makeup brands appear to prioritize aesthetics and marketing instead of focusing on inclusivity, chemical and sun safety. Therefore. It is important that we make better judgments when purchasing and supporting these brands. 
+
+Future directions: Shiny app capable of inputting makeup preferences and outputs relevnat makeup brands?  
